@@ -6,7 +6,7 @@ import time
 
 
 class ERICS:
-    def __init__(self, n_param, window_mvg_average=10, window_drift_detect=10, beta=0.0001, base_model='probit',
+    def __init__(self, n_param, window_mvg_average=50, window_drift_detect=50, beta=0.0001, base_model='probit',
                  init_mu=0, init_sigma=1, epochs=10, lr_mu=0.01, lr_sigma=0.01):
         """
         ERICS: Effective and Robust Identification of Concept Shift
@@ -22,10 +22,10 @@ class ERICS:
         :param window_drift_detect: (int) Window Size for Drift Detection
         :param beta: (float) Update rate for the alpha-threshold
         :param base_model: (str) Name of the base predictive model (whose parameters we investigate)
-        :param init_mu: (int) Initialize mean of parameter distributions (according to [1])
-        :param init_sigma: (int) Initialize variance of parameter distributions (according to [1])
-        :param epochs: (int) Number of epochs for optimization of parameter distributions (according to [1])
-        :param lr_mu: (float) Learning rate for the gradient update of the mean (according to [1])
+        :param init_mu: (int) Initialize mean of parameter distributions (according to [2])
+        :param init_sigma: (int) Initialize variance of parameter distributions (according to [2])
+        :param epochs: (int) Number of epochs for optimization of parameter distributions (according to [2])
+        :param lr_mu: (float) Learning rate for the gradient update of the mean (according to [2])
         :param lr_sigma: (float) Learning rate for the gradient update of the variance (according to [2])
         """
         # User-set ERICS-hyperparameters
@@ -36,14 +36,18 @@ class ERICS:
         self.base_model = base_model
 
         # Default hyperparameters
-        self.time_step = 0                                      # Current Time Step
-        self.time_since_last_global_drift = 0                   # Time steps since last global drift detection
-        self.time_since_last_partial_drift = np.zeros(n_param)  # Time steps since last partial drift detection
-        self.global_drifts = []                                 # Time steps of all global drifts
-        self.partial_drifts = []                                # (time step, param.idx)-tuples of all partial drifts
-        self.alpha = None                                       # Adaptive threshold for global concept drift detection
-        self.partial_alpha = [None] * self.n_param              # Adaptive threshold for partial concept drift detection
-        self.partial_alpha = np.asarray(self.partial_alpha)     # Todo: check if this cant be applied to the prior line
+        self.time_step = 0                                          # Current Time Step
+        self.time_since_last_global_drift = 0                       # Time steps since last global drift detection
+        self.time_since_last_partial_drift = np.zeros(n_param)      # Time steps since last partial drift detection
+        self.global_drifts = []                                     # Time steps of all global drifts
+        self.partial_drifts = []                                    # (time step, param.idx)-tuples of all partial drifts
+        self.alpha = None                                           # Adaptive threshold for global concept drift detection
+        self.partial_alpha = np.asarray([None] * self.n_param)      # Adaptive threshold for partial concept drift detection
+        self.mu_w = np.ones((self.M, self.n_param)) * init_mu       # Parameter Mean in window
+        self.sigma_w = np.ones((self.M, self.n_param)) * init_sigma # Parameter Variance in window
+        self.param_sum = np.zeros((self.M - 1, self.n_param))       # Sum-expression for computation of moving average (see Eq. (8) in [1])
+        self.global_info_ma = []                                    # Global moving average
+        self.partial_info_ma = []                                   # Partial moving average
 
         # Parameters of FIRES (Probit) model according to [2]
         if self.base_model == 'probit':
@@ -54,11 +58,6 @@ class ERICS:
             self.fires_lr_sigma = lr_sigma
             self.fires_labels = []                                          # Unique labels (fires requires binary labels)
             self.fires_encode_labels = True                                 # Indicator for warning message (auto-encoded labels)
-            self.mu_w = np.ones((self.M, self.n_param)) * init_mu           # Parameter Mean in window
-            self.sigma_w = np.ones((self.M, self.n_param)) * init_sigma     # Parameter Variance in window
-            self.param_sum = np.zeros((self.M - 1, self.n_param))           # Sum-expression for computation of moving average (see Eq. (8) in [1])
-            self.global_info_ma = []                                        # Global moving average
-            self.partial_info_ma = []                                       # Partial moving average
 
         # ### ADD YOUR OWN MODEL PARAMETERS HERE ############################
         # if self.base_model == 'your_model':
@@ -104,6 +103,51 @@ class ERICS:
         self.time_step += 1
 
         return g_drift, p_drift, time.time() - start
+
+    def __update_param_sum(self):
+        """
+        Retrieve current parameter distribution and compute sum expression according to Eq. (8) in the ERICS paper [1]
+        """
+        # Retrieve current distribution parameters
+        if self.base_model == 'probit':
+            new_mu = copy.copy(self.fires_mu).reshape(1, -1)
+            new_sigma = copy.copy(self.fires_sigma).reshape(1, -1)
+        # ### ADD YOUR OWN MODEL HERE #######################################
+        # elif(self.base_model == 'your_model':
+        #   new_mu = your_model.mu
+        #   new_sigma = your_model.sigma
+        #####################################################################
+        else:
+            raise NotImplementedError('The base model {} has not been implemented.'.format(self.base_model))
+
+        # Drop oldest entry from window
+        self.mu_w = self.mu_w[1:, :]
+        self.sigma_w = self.sigma_w[1:, :]
+
+        # Add new entry to window
+        self.mu_w = np.concatenate((self.mu_w, new_mu))
+        self.sigma_w = np.concatenate((self.sigma_w, new_sigma))
+
+        # Compute parameter sum expression
+        for t in range(self.M - 1):
+            self.param_sum[t, :] = (self.sigma_w[t + 1, :] ** 2 + (self.mu_w[t, :] - self.mu_w[t + 1, :]) ** 2) / self.sigma_w[t, :] ** 2
+
+    def __compute_moving_average(self):
+        """
+        Compute the moving average (according to Eq. (8) in the ERICS paper [1])
+        """
+        partial_ma = np.zeros(self.n_param)
+        global_score = np.zeros(self.M - 1)
+
+        for k in range(self.n_param):
+            partial_score = self.param_sum[:, k] - 1
+            global_score += partial_score
+            partial_ma[k] = np.sum(np.abs(partial_score)) / (2 * self.M)  # Add partial mov. avg. for parameter k
+
+        global_ma = np.sum(np.abs(global_score)) / (2 * self.M)
+
+        self.global_info_ma.append(global_ma)
+        self.partial_info_ma.append(partial_ma)
 
     def __detect_drift(self):
         """
@@ -163,51 +207,9 @@ class ERICS:
 
         return g_drift, p_drift
 
-    def __compute_moving_average(self):
-        """
-        Compute the moving average (according to Eq. (8) in the ERICS paper [1])
-        """
-        partial_ma = np.zeros(self.n_param)
-        global_score = np.zeros(self.M - 1)
-
-        for k in range(self.n_param):
-            partial_score = self.param_sum[:, k] - 1
-            global_score += partial_score
-            partial_ma[k] = np.sum(np.abs(partial_score)) / (2 * self.M)  # Add partial mov. avg. for parameter k
-
-        global_ma = np.sum(np.abs(global_score)) / (2 * self.M)
-
-        self.global_info_ma.append(global_ma)
-        self.partial_info_ma.append(partial_ma)
-
-    def __update_param_sum(self):
-        """
-        Retrieve current parameter distribution and compute sum expression according to Eq. (8) in the ERICS paper [1]
-        """
-        # Retrieve current distribution parameters
-        if self.base_model == 'probit':
-            new_mu = copy.copy(self.fires_mu).reshape(1, -1)
-            new_sigma = copy.copy(self.fires_sigma).reshape(1, -1)
-        # ### ADD YOUR OWN MODEL HERE #######################################
-        # elif(self.base_model == 'your_model':
-        #   new_mu = your_model.mu
-        #   new_sigma = your_model.sigma
-        #####################################################################
-        else:
-            raise NotImplementedError('The base model {} has not been implemented.'.format(self.base_model))
-
-        # Drop oldest entry from window
-        self.mu_w = self.mu_w[1:, :]
-        self.sigma_w = self.sigma_w[1:, :]
-
-        # Add new entry to window
-        self.mu_w = np.concatenate((self.mu_w, new_mu))
-        self.sigma_w = np.concatenate((self.sigma_w, new_sigma))
-
-        # Compute parameter sum expression  # Todo: what happens when there is only one observation???
-        for t in range(self.M - 1):
-            self.param_sum[t, :] = (self.sigma_w[t + 1, :] ** 2 + (self.mu_w[t, :] - self.mu_w[t + 1, :]) ** 2) / self.sigma_w[t, :] ** 2
-
+    ###########################################
+    # BASE MODELS
+    ##########################################
     def __update_probit(self, x, y):
         """
         Update parameters of the Probit model
@@ -224,13 +226,15 @@ class ERICS:
                 self.fires_labels.append(y_val)
 
         if tuple(self.fires_labels) != (-1, 1):  # Check if labels are encoded correctly
-            if len(self.fires_labels) <= 2:
+            if self.fires_encode_labels:
+                warn('FIRES WARNING: The target variable will automatically be encoded as {-1, 1}.')
+                self.fires_encode_labels = False  # set indicator to false
+
+            if len(self.fires_labels) < 2:
+                y[y == self.fires_labels[0]] = -1
+            elif len(self.fires_labels) == 2:
                 y[y == self.fires_labels[0]] = -1
                 y[y == self.fires_labels[1]] = 1
-
-                if self.fires_encode_labels:
-                    warn('FIRES WARNING: The target variable will automatically be encoded as: {} = -1, {} = 1'.format(self.fires_labels[0], self.fires_labels[1]))
-                    self.fires_encode_labels = False  # set indicator to false
             else:
                 raise ValueError('The target variable y must be binary.')
 
