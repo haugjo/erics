@@ -1,14 +1,16 @@
 # ERICS
 This repository provides an implementation of the ERICS concept drift detection framework that is introduced in
 
-*Johannes Haug and Gjergji Kasneci (2020). Learning Parameter Distributions to Detect Concept Drift in Data Streams.*
+*[1] Haug, J., & Kasneci, G. (2020). [Learning Parameter Distributions to Detect Concept Drift in Data Streams.](https://arxiv.org/abs/2010.09388) arXiv preprint arXiv:2010.09388.*
 
 to be published in the Proceedings of the 25th International Conference on Pattern Recognition (ICPR) 2020.
-An ArXiv-link to the paper will be added soon.
+Please refer to our paper if you are using this package (arXiv-link above).
 
 ## Apply ERICS to Your Project
-Here, we provide ERICS with a Probit model, as described in the paper.
-Note that we adopted the optimization scheme of the [FIRES](https://github.com/haugjo/fires) feature selection framework [1].
+This package provides an implementation of ERICS with a Probit model, as specified in the paper [1].
+We adopted the optimization scheme of [FIRES](https://github.com/haugjo/fires) (a state-of-the-art online feature selection framework [2])
+to iteratively learn the parameter distributions.
+
 After downloading/cloning the package you may use ERICS as follows:
 
 ```python
@@ -47,9 +49,10 @@ stream.restart()  # Restart the FileStream
 ERICS is model-agnostic. Hence, you may use the parameters of any predictive model.
 To add another predictive model, you need to substitute the placeholders ``### ADD YOUR OWN MODEL HERE ###`` in *erics.py* accordingly.
 
-**Note**: We consider normally distributed model parameters in this implementation. If you require a different parameter distribution, you may specify ERICS according to the paper.
+**Note**: We consider normally distributed model parameters in this implementation. 
+However, you may specify ERICS for any parameter distribution and predictive model, as described in the paper [1].
 
 If you want to contribute your instantiation of ERICS to this repository, please feel free to issue a pull request or send us an email.
 
 ## Related Papers
-[1] Haug, Johannes, et al. ["Leveraging Model Inherent Variable Importance for Stable Online Feature Selection."](https://dl.acm.org/doi/abs/10.1145/3394486.3403200) Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining. 2020.
+[2] Haug, Johannes, et al. ["Leveraging Model Inherent Variable Importance for Stable Online Feature Selection."](https://dl.acm.org/doi/abs/10.1145/3394486.3403200) Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining. 2020.
