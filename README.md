@@ -1,9 +1,8 @@
 # ERICS
 This repository provides an implementation of the ERICS concept drift detection framework that is introduced in
 
-*[1] Haug, J., & Kasneci, G. (2020). [Learning Parameter Distributions to Detect Concept Drift in Data Streams.](https://arxiv.org/abs/2010.09388) arXiv preprint arXiv:2010.09388.*
+*[1] Haug, Johannes, and Gjergji Kasneci. ["Learning Parameter Distributions to Detect Concept Drift in Data Streams."](https://arxiv.org/abs/2010.09388) 2020 25th International Conference on Pattern Recognition (ICPR). IEEE, 2021.*
 
-to be published in the Proceedings of the 25th International Conference on Pattern Recognition (ICPR) 2020.
 Please refer to our paper if you are using this package (arXiv-link above).
 
 ## Apply ERICS to Your Project
