@@ -5,6 +5,8 @@ This repository provides an implementation of the ERICS concept drift detection 
 
 Please refer to our paper if you are using this package (arXiv-link above).
 
+>**Note:** ERICS is now also included in the [float](https://github.com/haugjo/float) evaluation framework.
+
 ## Apply ERICS to Your Project
 This package provides an implementation of ERICS with a Probit model, as specified in the paper [1].
 We adopted the optimization scheme of [FIRES](https://github.com/haugjo/fires) (a state-of-the-art online feature selection framework [2])
